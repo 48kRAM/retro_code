@@ -1,0 +1,85 @@
+#!/usr/bin/perl
+
+use Getopt::Long;
+use File::Basename;
+use Data::Dumper;
+use strict;
+
+# Default to 32kB ROMs
+my $romsize=32*1024;
+
+my ($outbase, $outfile);
+my $verbose=0;
+
+GetOptions(
+    "s|split-size=i"    => \$romsize,
+    "o|outfile=s"       => \$outfile,
+    "v|verbose"         => \$verbose,
+);
+my $infile=$ARGV[0];
+if ($romsize < 3000) {
+    # ROM size was given in kB, so convert to bytes
+    $romsize*=1024;
+}
+
+# ROM number - increments as we write
+my $rnum=0;
+
+printf("Opening input file %s\n", $infile) if ($verbose);
+open(my $IH, '<', $infile) or die ("Cannot open input file $infile");
+binmode $IH;
+my $infilesize=(stat($infile))[7];
+printf("Input file is %d bytes long\n", $infilesize) if ($verbose);
+
+if (!$outfile) {
+    # Default to base name of the input file
+    my ($fname) = basename($infile);
+    my @temp=split(/\./, $fname);
+    $outbase=join('', @temp[0..$#temp-1]);
+    printf("Output basename is %s\n", $outbase);
+}
+printf("Writing ROM images of %d bytes\n", $romsize) if ($verbose);
+#open(my $HH, '>', $ARGV[2]) or die ("Cant write hi");
+#binmode $HH;
+
+my $LO_FH=undef;
+my $HI_FH=undef;
+my $data='';
+my $input_offset=0;
+my $rom_num=0;
+my $rom_bytes=0;
+
+for ($input_offset=0; $input_offset < $infilesize; $input_offset++) {
+    # Read / copy a "LO" byte
+    if (!$LO_FH) {
+        # Open a new "LO" file
+        my $temp=$outbase.'_lo'.$rom_num;
+        open($LO_FH, '>', $temp) or die ("Cannot write output to $temp!");
+    }
+    #printf("Reading byte %d\n", $input_offset);
+    my $res = read($IH, $data, 1);
+    print($LO_FH $data);
+
+    # Now, do the HI byte
+    $input_offset++;
+    if (!$HI_FH) {
+        # Open a new "LO" file
+        my $temp=$outbase.'_hi'.$rom_num;
+        open($HI_FH, '>', $temp) or die ("Cannot write output to $temp!");
+    }
+    #printf("Reading byte %d\n", $input_offset);
+    my $res = read($IH, $data, 1);
+    print($HI_FH $data);
+    $rom_bytes++;
+
+    # Check if we have filled the output ROM size
+    #printf("Written bytes: %d\n", $rom_bytes) if ($verbose);
+    if ($rom_bytes>=$romsize) {
+        # Close current ROM files and incr ROM number
+        printf("ROM set %d is filled\n", $rom_num) if ($verbose);
+        close($LO_FH); undef($LO_FH);
+        close($HI_FH); undef($HI_FH);
+        $rom_num++;
+        $rom_bytes=0;
+    }
+}
